@@ -8,21 +8,21 @@ use std::time::Instant;
 pub struct GameTimer {
     pub text: graphics::Text,
     pub start: Instant,
-    pub duration: Duration,
     pub color: Color,
     pub remaining: Duration,
+    pub duration: Duration,
 }
 
 impl GameTimer {
     pub fn new(_ctx: &mut Context, start: Instant, duration: Duration) -> GameResult<GameTimer> {
-        let text = graphics::Text::new("02:00");
+        let text = graphics::Text::new("");
 
         Ok(GameTimer {
             text,
             start,
-            duration,
             color: Color::WHITE,
             remaining: duration,
+            duration,
         })
     }
 
@@ -48,12 +48,14 @@ impl GameTimer {
         Ok(())
     }
 
-    pub fn give_additional_time(&mut self, additional_time: Duration) {
+    pub fn give_additional_time(&mut self, additional_time: Duration) -> Duration {
         self.duration += additional_time;
+        return self.duration;
     }
 
-    pub fn take_time(&mut self, take: Duration) {
+    pub fn take_time(&mut self, take: Duration) -> Duration {
         self.duration -= take;
+        return self.duration;
     }
 
     pub fn draw(&self, canvas: &mut graphics::Canvas) -> GameResult {
@@ -65,6 +67,7 @@ impl GameTimer {
             .color(self.color);
 
         canvas.draw(&self.text, draw_params);
+
         Ok(())
     }
 }

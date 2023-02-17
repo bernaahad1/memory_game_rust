@@ -189,12 +189,6 @@ impl Bonuses {
         Ok(())
     }
 
-    pub fn tool_selected(&mut self, _ctx: &mut Context, x: f32, y: f32) -> bool {
-        return self.bonus_time.click_and_update(x, y)
-            || self.free_match.click_and_update(x, y)
-            || self.freeze_time.click_and_update(x, y);
-    }
-
     pub fn draw(&self, canvas: &mut graphics::Canvas) -> GameResult {
         self.bonus_time.draw(canvas)?;
         self.free_match.draw(canvas)?;

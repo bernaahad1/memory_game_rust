@@ -53,8 +53,6 @@ impl Card {
             CardTurning::TurnStart => {
                 if self.is_matched {
                     self.turning_state = CardTurning::TurnEnd;
-                    // self.turning = false;
-                    // self.is_clicked = !self.is_clicked;
                 } else {
                     self.turning_state = CardTurning::TurnMiddle
                 }
@@ -62,11 +60,11 @@ impl Card {
             CardTurning::TurnMiddle => {
                 self.turning_state = CardTurning::TurnEnd;
                 self.is_clicked = !self.is_clicked;
+                self.turning = false;
             }
             CardTurning::TurnEnd => {
                 if self.turning || self.is_matched {
                     self.turning_state = CardTurning::TurnStart;
-                    self.turning = false;
                 }
             }
         }

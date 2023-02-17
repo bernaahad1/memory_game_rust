@@ -4,7 +4,6 @@ use std::path;
 use std::path::Path;
 
 use bonuses::BonusState;
-use ggez::audio;
 use ggez::audio::SoundSource;
 use ggez::event;
 use ggez::event::MouseButton;
@@ -29,14 +28,21 @@ const CARD_HEIGHT: u32 = 200;
 pub mod gameTimer;
 use crate::gameTimer::GameTimer;
 
+pub mod sounds;
+use crate::sounds::Sounds;
+
 pub mod card;
 use crate::card::Card;
 
 pub mod bonuses;
 use crate::bonuses::Bonuses;
 
+pub mod levels;
+use crate::levels::Levels;
+
 #[derive(Debug)]
 enum GameState {
+    Home,
     Match,
     NotMatched,
     Win,
@@ -47,7 +53,6 @@ enum GameState {
 struct MainState {
     mouse_down: bool,
     mouse_click: Option<Vec2>,
-    // board_size: u32,
     cards_map: HashMap<(u32, u32), Card>,
     timer: GameTimer,
     selected: Vec<((u32, u32), u32)>,
@@ -55,20 +60,44 @@ struct MainState {
     game_state: GameState,
     match_streak: usize,
     bonuses: Bonuses,
+    levels: Levels,
+    sounds: Sounds,
 }
 
 impl MainState {
-    fn new(ctx: &mut Context, board_size: u32) -> GameResult<MainState> {
-        let mut card_ids: Vec<u32> = (1..=((board_size * 3) / 2 as u32))
+    fn new(ctx: &mut Context) -> GameResult<MainState> {
+        let timer = GameTimer::new(ctx, Instant::now(), Duration::from_secs(0))?;
+
+        let cards_map = HashMap::new();
+
+        let bonuses = Bonuses::new(ctx, WINDOW_WIDTH)?;
+        let levels = Levels::new(ctx, WINDOW_WIDTH, WINDOW_HEIGHT)?;
+        let sounds = Sounds::new(ctx)?;
+
+        Ok(MainState {
+            mouse_down: false,
+            mouse_click: None,
+            cards_map,
+            timer,
+            selected: Vec::new(),
+            time_on_last_click: None,
+            game_state: GameState::Home,
+            match_streak: 0,
+            bonuses,
+            levels,
+            sounds,
+        })
+    }
+
+    fn create_game(&mut self, ctx: &mut Context, board_size: u32, seconds: Duration) -> GameResult {
+        let mut card_ids: Vec<u32> = (1..=(((board_size * 3) / 2) as u32))
             .chain(1..=((board_size * 3) / 2 as u32))
             .collect();
 
         let mut rng = rand::thread_rng();
         card_ids.shuffle(&mut rng);
 
-        let timer = GameTimer::new(ctx, Instant::now(), Duration::from_secs(120))?;
-
-        let mut cards_map = HashMap::new();
+        self.timer = GameTimer::new(ctx, Instant::now(), seconds)?;
 
         let start =
             (WINDOW_WIDTH.floor() as u32 - (10 * (board_size - 1)) - (CARD_WIDTH * board_size)) / 2;
@@ -79,7 +108,7 @@ impl MainState {
                 let x = start + (CARD_WIDTH + 10) * i;
 
                 if let Some(match_id) = card_ids.pop() {
-                    cards_map.insert(
+                    self.cards_map.insert(
                         (x, y),
                         Card::new(
                             ctx,
@@ -99,39 +128,63 @@ impl MainState {
             }
         }
 
-        let bonuses = Bonuses::new(ctx, WINDOW_WIDTH)?;
-
-        Ok(MainState {
-            mouse_down: false,
-            mouse_click: None,
-            // board_size,
-            cards_map,
-            timer,
-            selected: Vec::new(),
-            time_on_last_click: None,
-            game_state: GameState::Default,
-            match_streak: 0,
-            bonuses,
-        })
+        Ok(())
     }
 }
 
 impl event::EventHandler<ggez::GameError> for MainState {
     fn update(&mut self, ctx: &mut Context) -> GameResult {
+        // Slecting the game level
+        if matches!(self.game_state, GameState::Home) {
+            if self.levels.easy.is_clicked {
+                self.create_game(ctx, 2, Duration::from_secs(45))?;
+                self.game_state = GameState::Default;
+            } else if self.levels.medium.is_clicked {
+                self.create_game(ctx, 4, Duration::from_secs(60))?;
+                self.game_state = GameState::Default;
+            } else if self.levels.hard.is_clicked {
+                self.create_game(ctx, 6, Duration::from_secs(90))?;
+                self.game_state = GameState::Default;
+            } else if let Some(click) = self.mouse_click {
+                if self.levels.easy.is_clicked(click.x, click.y) {
+                    self.sounds.start.play(ctx)?;
+                    self.levels.update(ctx)?;
+                } else if self.levels.medium.is_clicked(click.x, click.y) {
+                    self.sounds.start.play(ctx)?;
+                    self.levels.update(ctx)?;
+                } else if self.levels.hard.is_clicked(click.x, click.y) {
+                    self.sounds.start.play(ctx)?;
+                    self.levels.update(ctx)?;
+                }
+            }
+
+            self.levels.update(ctx)?;
+
+            return Ok(());
+        }
+
         self.game_state = GameState::Default;
         self.bonuses.update(ctx)?;
 
         if self.mouse_down {
             if let Some(click) = self.mouse_click {
                 if self.bonuses.bonus_time.click_and_update(click.x, click.y) {
+                    self.sounds.bonus.play(ctx)?;
+
                     self.timer.duration += Duration::new(15, 0);
                     self.mouse_down = false;
                     self.mouse_click = None;
                 } else if self.bonuses.freeze_time.click_and_update(click.x, click.y) {
+                    self.sounds.bonus.play(ctx)?;
+
                     self.timer.duration += Duration::new(15, 0);
                     self.mouse_down = false;
                     self.mouse_click = None;
-                } else if self.bonuses.free_match.click_and_update(click.x, click.y) {
+                } else if self.selected.len() <= 1
+                    && self.bonuses.free_match.click_and_update(click.x, click.y)
+                {
+                    self.sounds.bonus.play(ctx)?;
+
                     if self.selected.len() == 0 {
                         let mut match_id: i32 = -1;
                         for (key, value) in self.cards_map.iter_mut() {
@@ -148,7 +201,19 @@ impl event::EventHandler<ggez::GameError> for MainState {
                                 value.click();
                                 break;
                             }
-                            // value.update(ctx)?;
+                        }
+                    }
+                    if self.selected.len() == 1 {
+                        let match_id: u32 = self.selected[0].1;
+                        for (key, value) in self.cards_map.iter_mut() {
+                            if value.match_id == match_id && value.is_clicked == false {
+                                self.selected.push((*key, value.match_id));
+                                self.time_on_last_click = Some(ctx.time.time_since_start());
+
+                                value.click();
+                                self.mouse_down = false;
+                                self.mouse_click = None;
+                            }
                         }
                     }
                     self.mouse_down = false;
@@ -158,7 +223,10 @@ impl event::EventHandler<ggez::GameError> for MainState {
         }
 
         match self.bonuses.freeze_time.state {
-            BonusState::Used => self.timer.update(ctx)?,
+            BonusState::Used => {
+                self.timer.update(ctx)?;
+                self.sounds.bonus.play(ctx)?;
+            }
             BonusState::NotUsed => self.timer.update(ctx)?,
             BonusState::Using => {}
             BonusState::NotActive => self.timer.update(ctx)?,
@@ -204,6 +272,7 @@ impl event::EventHandler<ggez::GameError> for MainState {
 
         if let Some(time) = self.time_on_last_click {
             if time + Duration::from_secs(1) < ctx.time.time_since_start() {
+                // Check for match
                 if self.selected.len() == 2 && self.selected[0].1 == self.selected[1].1 {
                     self.cards_map.remove(&self.selected[0].0);
 
@@ -235,14 +304,11 @@ impl event::EventHandler<ggez::GameError> for MainState {
             }
         }
 
+        // Check for match streak
         if self.match_streak == 2 {
             println!("streak");
             if matches!(self.bonuses.bonus_time.state, BonusState::NotActive) {
                 self.bonuses.bonus_time.update_state()?;
-            }
-        } else if self.match_streak == 3 {
-            if matches!(self.bonuses.free_match.state, BonusState::NotActive) {
-                self.bonuses.free_match.update_state()?;
             }
         }
 
@@ -275,20 +341,25 @@ impl event::EventHandler<ggez::GameError> for MainState {
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult {
-        let dark_blue = graphics::Color::from_rgb(26, 51, 77);
-        let mut canvas = graphics::Canvas::from_frame(ctx, dark_blue);
-
-        self.bonuses.draw(&mut canvas)?;
+        let canvas_color = graphics::Color::from_rgb(0, 25, 51);
+        let mut canvas = graphics::Canvas::from_frame(ctx, canvas_color);
 
         match self.game_state {
+            GameState::Home => {
+                self.levels.draw(&mut canvas)?;
+                canvas.finish(ctx)?;
+
+                return Ok(());
+            }
             GameState::Match => {
-                let mut matched = audio::Source::new(ctx, "/sounds/collect.ogg")?;
-                matched.set_volume(50.0);
-                matched.play(ctx)?;
+                self.sounds.collect.play(ctx)?;
 
                 println!("Match")
             }
-            GameState::NotMatched => println!("Not a match"),
+            GameState::NotMatched => {
+                println!("Not a match");
+                self.sounds.wrong.play(ctx)?;
+            }
             GameState::Win => {
                 let dest = Point2 {
                     x: ((WINDOW_WIDTH / 2.0) as f32),
@@ -324,6 +395,8 @@ impl event::EventHandler<ggez::GameError> for MainState {
                 canvas.draw(&text_win, draw_params_win);
 
                 canvas.finish(ctx)?;
+
+                self.sounds.start.play_later()?;
 
                 return Ok(());
             }
@@ -361,6 +434,8 @@ impl event::EventHandler<ggez::GameError> for MainState {
 
                 canvas.draw(&text_you_lost, draw_params_lost);
 
+                self.sounds.fail.play_later()?;
+
                 canvas.finish(ctx)?;
 
                 return Ok(());
@@ -369,6 +444,7 @@ impl event::EventHandler<ggez::GameError> for MainState {
         }
 
         self.timer.draw(&mut canvas)?;
+        self.bonuses.draw(&mut canvas)?;
 
         for (_key, value) in self.cards_map.iter_mut() {
             value.draw(&mut canvas)?;
@@ -395,7 +471,7 @@ pub fn main() -> GameResult {
     });
 
     // Контекст и event loop
-    let (mut ctx, event_loop) = ContextBuilder::new("memry_game", "awesome_person")
+    let (mut ctx, event_loop) = ContextBuilder::new("memry_game", "Berna Ahad")
         .default_conf(conf.clone())
         .build()
         .unwrap();
@@ -403,10 +479,11 @@ pub fn main() -> GameResult {
     if let Ok(manifest_dir) = env::var("CARGO_MANIFEST_DIR") {
         let mut path = path::PathBuf::from(manifest_dir);
         path.push("resources");
+
         ctx.fs.mount(&path, true);
     }
 
-    let state = MainState::new(&mut ctx, 4).unwrap();
+    let state = MainState::new(&mut ctx).unwrap();
 
     event::run(ctx, event_loop, state);
 }
