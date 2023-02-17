@@ -58,7 +58,7 @@ struct MainState {
     selected: Vec<((u32, u32), u32)>,
     time_on_last_click: Option<Duration>,
     game_state: GameState,
-    match_streak: usize,
+    match_strike: usize,
     bonuses: Bonuses,
     levels: Levels,
     sounds: Sounds,
@@ -82,7 +82,7 @@ impl MainState {
             selected: Vec::new(),
             time_on_last_click: None,
             game_state: GameState::Home,
-            match_streak: 0,
+            match_strike: 0,
             bonuses,
             levels,
             sounds,
@@ -94,8 +94,8 @@ impl MainState {
             .chain(1..=((board_size * 3) / 2 as u32))
             .collect();
 
-        let mut rng = rand::thread_rng();
-        card_ids.shuffle(&mut rng);
+        let mut rnd = rand::thread_rng();
+        card_ids.shuffle(&mut rnd);
 
         self.timer = GameTimer::new(ctx, Instant::now(), seconds)?;
 
@@ -164,8 +164,8 @@ impl event::EventHandler<ggez::GameError> for MainState {
         }
 
         self.game_state = GameState::Default;
-        self.bonuses.update(ctx)?;
 
+        // Check if any bonus is selected
         if self.mouse_down {
             if let Some(click) = self.mouse_click {
                 if self.bonuses.bonus_time.click_and_update(click.x, click.y) {
@@ -222,6 +222,9 @@ impl event::EventHandler<ggez::GameError> for MainState {
             }
         }
 
+        self.bonuses.update(ctx)?;
+
+        // Depending on the freeze time bonus update the timer
         match self.bonuses.freeze_time.state {
             BonusState::Used => {
                 self.timer.update(ctx)?;
@@ -232,6 +235,7 @@ impl event::EventHandler<ggez::GameError> for MainState {
             BonusState::NotActive => self.timer.update(ctx)?,
         }
 
+        // Game is over if the given time passed
         if self.timer.remaining <= Duration::new(0, 5) && self.cards_map.len() != 0 {
             self.game_state = GameState::Lost;
             ctx.request_quit();
@@ -239,16 +243,14 @@ impl event::EventHandler<ggez::GameError> for MainState {
             return Ok(());
         }
 
+        // Game if over of there are no cards left
         if self.cards_map.len() == 0 {
             ctx.request_quit();
             self.game_state = GameState::Win;
             return Ok(());
         }
 
-        for (_, value) in self.cards_map.iter_mut() {
-            value.update(ctx)?;
-        }
-
+        // Check if any card is clicked if there are 0 or 1 flipped already
         if self.mouse_down && self.selected.len() < 2 {
             if let Some(click) = self.mouse_click {
                 for (key, value) in self.cards_map.iter_mut() {
@@ -270,6 +272,11 @@ impl event::EventHandler<ggez::GameError> for MainState {
             }
         }
 
+        for (_, value) in self.cards_map.iter_mut() {
+            value.update(ctx)?;
+        }
+
+        // Give some time for the card to flip before checking for match
         if let Some(time) = self.time_on_last_click {
             if time + Duration::from_secs(1) < ctx.time.time_since_start() {
                 // Check for match
@@ -279,9 +286,12 @@ impl event::EventHandler<ggez::GameError> for MainState {
                     self.cards_map.remove(&self.selected[1].0);
 
                     self.game_state = GameState::Match;
-                    self.timer.give_additional_time(Duration::from_secs(5));
 
-                    self.match_streak += 1;
+                    if !matches!(self.bonuses.freeze_time.state, BonusState::Using) {
+                        self.timer.give_additional_time(Duration::from_secs(5));
+                    }
+
+                    self.match_strike += 1;
 
                     self.selected = Vec::new();
                 } else if self.selected.len() >= 2 && self.selected[0].1 != self.selected[1].1 {
@@ -296,17 +306,21 @@ impl event::EventHandler<ggez::GameError> for MainState {
                     }
 
                     self.game_state = GameState::NotMatched;
-                    self.timer.take_time(Duration::from_secs(2));
-                    self.match_streak = 0;
+
+                    if !matches!(self.bonuses.freeze_time.state, BonusState::Using) {
+                        self.timer.take_time(Duration::from_secs(2));
+                    }
+
+                    self.match_strike = 0;
 
                     self.selected = Vec::new();
                 }
             }
         }
 
-        // Check for match streak
-        if self.match_streak == 2 {
-            println!("streak");
+        // Check for match strike
+        if self.match_strike == 2 {
+            println!("strike");
             if matches!(self.bonuses.bonus_time.state, BonusState::NotActive) {
                 self.bonuses.bonus_time.update_state()?;
             }
@@ -344,6 +358,7 @@ impl event::EventHandler<ggez::GameError> for MainState {
         let canvas_color = graphics::Color::from_rgb(0, 25, 51);
         let mut canvas = graphics::Canvas::from_frame(ctx, canvas_color);
 
+        // Check and draw the game state if needed
         match self.game_state {
             GameState::Home => {
                 self.levels.draw(&mut canvas)?;
@@ -357,14 +372,17 @@ impl event::EventHandler<ggez::GameError> for MainState {
                 println!("Match")
             }
             GameState::NotMatched => {
-                println!("Not a match");
                 self.sounds.wrong.play(ctx)?;
+
+                println!("Not a match");
             }
             GameState::Win => {
                 let dest = Point2 {
                     x: ((WINDOW_WIDTH / 2.0) as f32),
                     y: ((WINDOW_HEIGHT / 2.0) as f32),
                 };
+
+                self.sounds.start.play_later()?;
 
                 let mut text_finish = graphics::Text::new("FINISH");
 
@@ -396,8 +414,6 @@ impl event::EventHandler<ggez::GameError> for MainState {
 
                 canvas.finish(ctx)?;
 
-                self.sounds.start.play_later()?;
-
                 return Ok(());
             }
             GameState::Lost => {
@@ -405,6 +421,8 @@ impl event::EventHandler<ggez::GameError> for MainState {
                     x: ((WINDOW_WIDTH / 2.0) as f32),
                     y: ((WINDOW_HEIGHT / 2.0) as f32),
                 };
+
+                self.sounds.fail.play_later()?;
 
                 let mut text_time_out = graphics::Text::new("TIME OUT");
 
@@ -434,8 +452,6 @@ impl event::EventHandler<ggez::GameError> for MainState {
 
                 canvas.draw(&text_you_lost, draw_params_lost);
 
-                self.sounds.fail.play_later()?;
-
                 canvas.finish(ctx)?;
 
                 return Ok(());
@@ -443,9 +459,13 @@ impl event::EventHandler<ggez::GameError> for MainState {
             _ => {}
         }
 
+        //Draw timer
         self.timer.draw(&mut canvas)?;
+
+        // Draw bonus buttons
         self.bonuses.draw(&mut canvas)?;
 
+        // Draw cards
         for (_key, value) in self.cards_map.iter_mut() {
             value.draw(&mut canvas)?;
         }
@@ -456,7 +476,8 @@ impl event::EventHandler<ggez::GameError> for MainState {
     }
 
     fn quit_event(&mut self, _ctx: &mut Context) -> Result<bool, GameError> {
-        if self.timer.remaining <= Duration::new(0, 5) || self.cards_map.len() == 0 {
+        // Check if game quit is because Time Out or Win
+        if self.timer.remaining <= Duration::new(0, 3) || self.cards_map.len() == 0 {
             timer::sleep(Duration::from_secs(5));
         }
         return Ok(false);
@@ -471,7 +492,7 @@ pub fn main() -> GameResult {
     });
 
     // Контекст и event loop
-    let (mut ctx, event_loop) = ContextBuilder::new("memry_game", "Berna Ahad")
+    let (mut ctx, event_loop) = ContextBuilder::new("memory_game", "Berna Ahad")
         .default_conf(conf.clone())
         .build()
         .unwrap();

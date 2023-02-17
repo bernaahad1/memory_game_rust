@@ -34,8 +34,7 @@ impl GameTimer {
             self.remaining = self.duration - elapsed;
             let minutes = self.remaining.as_secs() / 60;
             let seconds = self.remaining.as_secs() % 60;
-            let timer_string = format!("{:02}:{:02}", minutes, seconds);
-            self.text = graphics::Text::new(&timer_string);
+            self.text = graphics::Text::new(&format!("{:02}:{:02}", minutes, seconds));
 
             if self.remaining.as_secs() % 2 == 0 {
                 self.color = Color::RED;
