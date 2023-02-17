@@ -10,11 +10,11 @@ pub struct GameTimer {
     pub start: Instant,
     pub duration: Duration,
     pub color: Color,
+    pub remaining: Duration,
 }
 
 impl GameTimer {
     pub fn new(_ctx: &mut Context, start: Instant, duration: Duration) -> GameResult<GameTimer> {
-        // let font = graphics::Font::default();
         let text = graphics::Text::new("02:00");
 
         Ok(GameTimer {
@@ -22,22 +22,22 @@ impl GameTimer {
             start,
             duration,
             color: Color::WHITE,
+            remaining: duration,
         })
     }
 
-    pub fn update(&mut self, ctx: &mut Context) -> GameResult {
+    pub fn update(&mut self, _ctx: &mut Context) -> GameResult {
         let elapsed = self.start.elapsed();
         if elapsed >= self.duration {
-            // End the game if the timer has run out.
-            ctx.request_quit();
+            self.remaining = Duration::new(0, 0)
         } else {
-            let remaining = self.duration - elapsed;
-            let minutes = remaining.as_secs() / 60;
-            let seconds = remaining.as_secs() % 60;
+            self.remaining = self.duration - elapsed;
+            let minutes = self.remaining.as_secs() / 60;
+            let seconds = self.remaining.as_secs() % 60;
             let timer_string = format!("{:02}:{:02}", minutes, seconds);
             self.text = graphics::Text::new(&timer_string);
 
-            if remaining.as_secs() % 2 == 0 {
+            if self.remaining.as_secs() % 2 == 0 {
                 self.color = Color::RED;
                 self.text.set_scale(40.0);
             } else {
