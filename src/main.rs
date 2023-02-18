@@ -476,7 +476,7 @@ impl event::EventHandler<ggez::GameError> for MainState {
     }
 
     fn quit_event(&mut self, _ctx: &mut Context) -> Result<bool, GameError> {
-        // Check if game quit is because Time Out or Win
+        // Check if game quit is because Time Out or Win or sth else
         if self.timer.remaining <= Duration::new(0, 3) || self.cards_map.len() == 0 {
             timer::sleep(Duration::from_secs(5));
         }

@@ -51,6 +51,7 @@ impl Card {
     pub fn update(&mut self, _ctx: &mut Context) -> GameResult {
         match self.turning_state {
             CardTurning::TurnStart => {
+                // If is match do not use middle state
                 if self.is_matched {
                     self.turning_state = CardTurning::TurnEnd;
                 } else {

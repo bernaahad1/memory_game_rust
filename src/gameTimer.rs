@@ -36,6 +36,7 @@ impl GameTimer {
             let seconds = self.remaining.as_secs() % 60;
             self.text = graphics::Text::new(&format!("{:02}:{:02}", minutes, seconds));
 
+            // Each second change the size and the color
             if self.remaining.as_secs() % 2 == 0 {
                 self.color = Color::RED;
                 self.text.set_scale(40.0);

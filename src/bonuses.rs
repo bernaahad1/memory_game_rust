@@ -35,8 +35,8 @@ impl Bonus {
         start_y: f32,
         duration: Duration,
     ) -> GameResult<Bonus> {
-        let mut res_text = graphics::Text::new(text);
-        res_text
+        let mut bonus_text = graphics::Text::new(text);
+        bonus_text
             .set_scale(30.)
             .set_layout(TextLayout {
                 h_align: graphics::TextAlign::Middle,
@@ -46,7 +46,7 @@ impl Bonus {
             .set_wrap(true);
 
         Ok(Bonus {
-            text: res_text,
+            text:bonus_text,
             state,
             width,
             height,
@@ -57,10 +57,13 @@ impl Bonus {
         })
     }
     pub fn update(&mut self, ctx: &mut Context) -> GameResult {
+        // Set the time that started using 
         if matches!(self.state, BonusState::Using) && self.started.is_none() {
             self.started = Some(ctx.time.time_since_start())
+
         } else if matches!(self.state, BonusState::Using) && !self.started.is_none() {
             if let Some(start) = self.started {
+                // if the given duration has passed update the state
                 if start + self.duration < ctx.time.time_since_start() {
                     self.update_state()?;
                 }
